@@ -22,6 +22,9 @@ contract Streamer is Ownable {
         - updates the balances mapping with the eth received in the function call
         - emits an Opened event
         */
+        if (balances[msg.sender] != 0) {
+            revert();
+        }
     }
 
     function timeLeft(address channel) public view returns (uint256) {
