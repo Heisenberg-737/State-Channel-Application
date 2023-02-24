@@ -15,16 +15,17 @@ contract Streamer is Ownable {
 
     function fundChannel() public payable {
         /*
-        Checkpoint 3: fund a channel
-
-        complete this function so that it:
         - reverts if msg.sender already has a running channel (ie, if balances[msg.sender] != 0)
         - updates the balances mapping with the eth received in the function call
         - emits an Opened event
         */
         if (balances[msg.sender] != 0) {
+            console.log("user already running state channel");
             revert();
         }
+
+        balances[msg.sender] = msg.value;
+        emit Opened(msg.sender, msg.value);
     }
 
     function timeLeft(address channel) public view returns (uint256) {
@@ -53,7 +54,6 @@ contract Streamer is Ownable {
         bytes32 prefixedHashed = keccak256(prefixed);
 
         /*
-        Checkpoint 5: Recover earnings
 
         The service provider would like to cash out their hard earned ether.
             - use ecrecover on prefixedHashed and the supplied signature
@@ -62,26 +62,74 @@ contract Streamer is Ownable {
             - adjust the channel balance, and pay the contract owner. (Get the owner address withthe `owner()` function)
             - emit the Withdrawn event
         */
+
+        address signer = ecrecover(
+            prefixedHashed,
+            voucher.sig.v,
+            voucher.sig.r,
+            voucher.sig.s
+        );
+
+        if (balances[signer] <= voucher.updatedBalance) {
+            console.log("Streamer Signer is not running the channel");
+            revert();
+        }
+
+        uint256 payment = balances[signer] - voucher.updatedBalance;
+
+        balances[signer] -= payment;
+
+        address owner = owner();
+
+        (bool success, ) = owner.call{value: payment}("");
+
+        if (!success) {
+            revert();
+        }
+
+        emit Withdrawn(owner, payment);
     }
 
     /*
-    Checkpoint 6a: Challenge the channel
-
-    create a public challengeChannel() function that:
     - checks that msg.sender has an open channel
     - updates canCloseAt[msg.sender] to some future time
     - emits a Challenged event
     */
+    function challengeChannel() public {
+        if (balances[msg.sender] == 0) {
+            revert();
+        }
+
+        canCloseAt[msg.sender] = block.timestamp + 30 seconds;
+
+        emit Challenged(msg.sender);
+    }
 
     /*
-    Checkpoint 6b: Close the channel
-
-    create a public defundChannel() function that:
     - checks that msg.sender has a closing channel
     - checks that the current time is later than the closing time
     - sends the channel's remaining funds to msg.sender, and sets the balance to 0
     - emits the Closed event
     */
+    function defundChannel() public {
+        if (canCloseAt[msg.sender] == 0) {
+            revert();
+        }
+
+        if (canCloseAt[msg.sender] > block.timestamp) {
+            revert();
+        }
+
+        (bool success, ) = msg.sender.call{value: balances[msg.sender]}("");
+
+        if (!success) {
+            revert();
+        }
+
+        balances[msg.sender] = 0;
+
+        emit Closed(msg.sender);
+    }
 
     struct Voucher {
         uint256 updatedBalance;
